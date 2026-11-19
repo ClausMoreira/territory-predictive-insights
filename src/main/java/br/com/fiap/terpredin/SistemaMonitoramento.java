@@ -10,8 +10,10 @@ import org.springframework.stereotype.Component;
 
 import br.com.fiap.terpredin.dominio.Alerta;
 import br.com.fiap.terpredin.dominio.DadosTerritorio;
+import br.com.fiap.terpredin.dominio.EstrategiaPrevisao;
 import br.com.fiap.terpredin.dominio.Medicao;
 import br.com.fiap.terpredin.dominio.NivelAlerta;
+import br.com.fiap.terpredin.dominio.PrevisaoMediaMovel;
 import br.com.fiap.terpredin.dominio.Sensor;
 import br.com.fiap.terpredin.dominio.SensorCargaRede;
 import br.com.fiap.terpredin.dominio.SensorTemperaturaAmbiente;
@@ -21,6 +23,7 @@ import br.com.fiap.terpredin.dominio.TipoSensor;
 import br.com.fiap.terpredin.excecao.DadosInvalidosException;
 import br.com.fiap.terpredin.excecao.FonteIndisponivelException;
 import br.com.fiap.terpredin.servico.ConfiguracaoSistema;
+import br.com.fiap.terpredin.servico.ResultadoPrevisao;
 import br.com.fiap.terpredin.servico.ServicoMonitoramento;
 
 /**
@@ -30,7 +33,9 @@ import br.com.fiap.terpredin.servico.ServicoMonitoramento;
 @Component
 public class SistemaMonitoramento implements CommandLineRunner {
 
-    /** Código de acesso para alterar limiares (informado no README para a correção). */
+    /**
+     * Código de acesso para alterar limiares (informado no README para a correção).
+     */
     private static final String CODIGO_ACESSO = "gs2026";
 
     private final Scanner scanner = new Scanner(System.in);
@@ -103,7 +108,8 @@ public class SistemaMonitoramento implements CommandLineRunner {
 
         int rodadas = lerInteiro("Quantas rodadas de leitura? (1 a 20): ");
         if (rodadas < 1 || rodadas > 20) {
-            throw new DadosInvalidosException("O número de rodadas deve ficar entre 1 e 20 (informado: " + rodadas + ").");
+            throw new DadosInvalidosException(
+                    "O número de rodadas deve ficar entre 1 e 20 (informado: " + rodadas + ").");
         }
 
         int gravadas = 0;
@@ -125,7 +131,20 @@ public class SistemaMonitoramento implements CommandLineRunner {
     // ---------- 2. Rodar previsões ----------
 
     private void rodarPrevisoes() {
-        System.out.println("Em construção: as previsões entram na Fase 4.");
+        EstrategiaPrevisao estrategia = new PrevisaoMediaMovel(configuracao.getJanelaPrevisao());
+        System.out.println("\n--- Previsões: " + estrategia.getNome() + " ---");
+
+        int alertasEmitidos = 0;
+        for (Sensor sensor : subestacao.getSensores()) {
+            ResultadoPrevisao resultado = servico.gerarPrevisao(sensor, estrategia);
+            System.out.println(resultado.resumo());
+            System.out.println();
+            if (resultado.gerouAlerta()) {
+                alertasEmitidos++;
+            }
+        }
+        System.out.println(alertasEmitidos + " alerta(s) emitido(s) nesta rodada. "
+                + "Os alertas apoiam a decisão da equipe; a ação final é sempre de quem opera a rede.");
     }
 
     // ---------- 3. Ver histórico ----------
@@ -237,7 +256,8 @@ public class SistemaMonitoramento implements CommandLineRunner {
         }
         int escolha = lerInteiro("Escolha: ");
         if (escolha < 1 || escolha > opcoes.size()) {
-            throw new DadosInvalidosException("Opção " + escolha + " não existe. Escolha entre 1 e " + opcoes.size() + ".");
+            throw new DadosInvalidosException(
+                    "Opção " + escolha + " não existe. Escolha entre 1 e " + opcoes.size() + ".");
         }
         return opcoes.get(escolha - 1);
     }
