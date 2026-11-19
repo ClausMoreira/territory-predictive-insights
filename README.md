@@ -96,16 +96,43 @@ Os sensores são simulados com `java.util.Random`, em faixas típicas de uma ond
 **O bônus.** Escolhemos exportar o histórico consultado em CSV (menu 3). Usamos ponto e vírgula como separador e vírgula decimal, para que o arquivo abra direitinho no Excel em português, com acentos e tudo.
 
 ## Padrões criacionais
-_(em construção)_
+Usamos dois padrões, e nos dois casos partimos da mesma pergunta: em que ponto a criação de objetos estava, de fato, atrapalhando?
+
+**Singleton na `ConfiguracaoSistema`.** Os limiares, a janela de previsão e a estratégia padrão precisam ser exatamente os mesmos para o menu, para o serviço de alertas e para a fábrica. Se cada parte guardasse a própria cópia, bastaria uma alteração no menu para o sistema passar a discordar de si mesmo. Com uma instância única, construtor privado e acesso por `getInstancia()`, qualquer mudança vale na hora para todos.
+
+Deixamos o padrão de fora de outros lugares de propósito. O `ServicoMonitoramento` já é mantido pelo Spring como instância única, e repetir isso à mão seria duplicar o trabalho do framework. Já `Medicao` e `Alerta` existem justamente para ter muitas instâncias.
+
+**Factory na `FabricaPrevisao`.** A escolha da estratégia depende da configuração, e não queríamos `if (tipo == ...)` espalhados pelo código. A fábrica guarda, em um `EnumMap`, o construtor de cada `TipoPrevisao`, então criar uma estratégia vira uma simples consulta ao mapa, sem `if` por tipo e sem `instanceof`. O menu conhece apenas `FabricaPrevisao.criarPadrao()` e o tipo abstrato `EstrategiaPrevisao`. Se amanhã surgir uma terceira estratégia, ela entra com uma linha.
+
+**E o Builder?** Ficou de fora. O candidato natural seria o `Alerta`, que tem vários campos, mas todos são obrigatórios, já são validados no construtor e o texto do motivo é montado pela própria classe. Um Builder acrescentaria uma classe sem deixar nada mais seguro ou mais claro.
 
 ## Testes automatizados
-_(em construção)_
+Escrevemos **26 testes** com JUnit 5, todos no padrão AAA (Arrange, Act, Assert). Nenhum depende de banco de dados ou de alguém digitando no console, por isso rodam em poucos segundos.
 
+| Classe de teste | Testes | O que verifica |
+|---|---|---|
+| `MedicaoTest` | 4 | Criação válida e rejeição de valores fora de faixa, carga negativa e sensor sem identificador |
+| `DadosTerritorioTest` | 4 | População negativa, código de acesso incorreto, alteração válida de limiar e ordem entre os níveis |
+| `PrevisaoMediaMovelTest` | 3 | Média apenas da janela, histórico insuficiente e janela inválida |
+| `PrevisaoComparacaoTest` | 4 | Tendência de alta, tendência de queda, períodos reduzidos e comportamento diferente da média móvel |
+| `ServicoMonitoramentoTest` | 5 | Alerta CRÍTICO, escolha do nível certo, ausência de alerta, silêncio com histórico curto e falha de sensor |
+| `FabricaPrevisaoTest` | 3 | Criação a partir da configuração e tipo não informado |
+| `ExportadorCsvTest` | 3 | Conteúdo do CSV de medições e de alertas e escape de campos |
+
+Algumas escolhas que valem destacar:
+
+- As duas exceções customizadas são verificadas com `assertThrows`: a `DadosInvalidosException` em quatro classes de teste e a `FonteIndisponivelException` em `ServicoMonitoramentoTest`.
+- Em `ServicoMonitoramentoTest`, os repositories são mocks do Mockito. Assim testamos a lógica de alerta sem banco e conferimos com `verify` se o alerta foi gravado ou, quando é o caso, se ele corretamente não foi.
+- Cada valor esperado está calculado nos comentários do próprio teste. Se alguém mexer na conta, o teste fica vermelho.
 ## Reflexão crítica
-_(em construção)_
+**Quando o sistema deve se calar?** Definimos um mínimo de 5 leituras, mas sabemos que esse número resolve só parte da questão. Na nossa simulação, várias leituras são gravadas no mesmo minuto, enquanto a pergunta real do território é sobre os próximos dias. Para antecipar uma onda de calor com alguma confiança, precisaríamos de leituras distribuídas ao longo de dias e, de preferência, da previsão meteorológica oficial. A estratégia de comparação também pede cuidado: com poucas leituras, a variação projetada pode ser apenas ruído, e o resultado, um alarme falso.
+
+**O que os dados não representam?** Um sensor de temperatura por região não enxerga a diferença entre uma praça arborizada e uma avenida sem sombra, onde se formam as ilhas de calor. A carga medida na subestação mostra o total, mas não aponta qual bairro está mais perto do limite. Os valores simulados também não têm o ritmo de um dia de verdade, com o pico de consumo no fim da tarde, nem a relação natural entre calor e consumo. Os limiares são referências que definimos para o projeto, e não normas técnicas da distribuidora. E, como não usamos dados pessoais, o sistema não sabe onde vivem as pessoas mais vulneráveis, que são justamente as que mais importam nessa história.
+
+**Por que o alerta apoia a decisão, em vez de tomá-la?** Porque o modelo é simples e pode errar para os dois lados. E porque decidir, aqui, significa escolher entre custos: remanejar carga pode deslocar o risco para outro bairro, e um desligamento programado pode deixar uma UBS no escuro. A equipe de operação conhece o que não está nos dados, como obras, eventos e manutenções. Por isso cada alerta mostra o próprio raciocínio (qual sensor, qual previsão, qual limite) e termina com uma sugestão, nunca com uma ordem. A responsabilidade continua sendo das pessoas.
 
 ## Uso de IA
-_(em construção)_
+Usamos o Qwen 3.8-Max, como assistente ao longo do desenvolvimento. Ele nos ajudou a transformar o enunciado em um cronograma com divisão de tarefas, propôs as primeiras versões dos testes e o esqueleto desse README, e foi útil para nos ajudar a entender nossos erros e as dificuldades que tivémos no caminho (e foram várias ^^)
 
 ## Divisão de tarefas
 
@@ -116,8 +143,8 @@ O enunciado sugere três frentes de trabalho. Como somos uma dupla, reorganizamo
 | Claus Moreira | Domínio (`ComponenteTerritorial`, sensores, `Medicao`, `DadosTerritorio`), exceções customizadas, persistência (repositories e gravação no `ServicoMonitoramento`), menu principal, exportação em CSV e as seções de execução, organização e decisões deste README |
 | Julia Lopes | `NivelAlerta`, `Alerta`, `EstrategiaPrevisao` e as duas estratégias, `ConfiguracaoSistema` (Singleton), geração de alertas no `ServicoMonitoramento`, `FabricaPrevisao` (Factory), testes automatizados e as seções de padrões, testes, reflexão crítica e uso de IA deste README |
 
-Cada integrante fez os commits da própria parte, como mostra o histórico do repositório.
+Por fim, sobrevivemos!
 
 ---
 
-*Que os alertas cheguem a tempo.* 🌡️
+*Que os alertas cheguem a tempo.* :D
