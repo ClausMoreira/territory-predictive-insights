@@ -1,5 +1,9 @@
 package br.com.fiap.terpredin;
 
+import java.io.IOException;
+import java.nio.file.Path;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 import java.util.Scanner;
@@ -22,6 +26,7 @@ import br.com.fiap.terpredin.dominio.TipoSensor;
 import br.com.fiap.terpredin.excecao.DadosInvalidosException;
 import br.com.fiap.terpredin.excecao.FonteIndisponivelException;
 import br.com.fiap.terpredin.servico.ConfiguracaoSistema;
+import br.com.fiap.terpredin.servico.ExportadorCsv;
 import br.com.fiap.terpredin.servico.FabricaPrevisao;
 import br.com.fiap.terpredin.servico.ResultadoPrevisao;
 import br.com.fiap.terpredin.servico.ServicoMonitoramento;
@@ -36,6 +41,10 @@ public class SistemaMonitoramento implements CommandLineRunner {
 
     /** Código de acesso para alterar limiares (informado no README para a correção). */
     private static final String CODIGO_ACESSO = "gs2026";
+
+    /** Pasta onde os arquivos CSV exportados são gravados. */
+    private static final Path PASTA_EXPORTACAO = Path.of("exportacoes");
+    private static final DateTimeFormatter CARIMBO = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
 
     private final Scanner scanner = new Scanner(System.in);
     private final ConfiguracaoSistema configuracao = ConfiguracaoSistema.getInstancia();
@@ -168,6 +177,16 @@ public class SistemaMonitoramento implements CommandLineRunner {
         }
         System.out.println(historico.size() + " medição(ões) de " + sensor + ":");
         historico.forEach(medicao -> System.out.println("  " + medicao));
+
+        if (confirmar("Exportar este histórico para CSV? (s/n): ")) {
+            Path arquivo = PASTA_EXPORTACAO.resolve("medicoes-" + sensor.getId() + "-" + carimbo() + ".csv");
+            try {
+                ExportadorCsv.exportarMedicoes(historico, arquivo);
+                System.out.println("Histórico exportado em: " + arquivo.toAbsolutePath());
+            } catch (IOException e) {
+                System.out.println("[ERRO AO EXPORTAR] Não foi possível gravar " + arquivo + ": " + e.getMessage());
+            }
+        }
     }
 
     private void listarAlertas() {
@@ -178,6 +197,16 @@ public class SistemaMonitoramento implements CommandLineRunner {
         }
         System.out.println(alertas.size() + " alerta(s) emitido(s), do mais recente para o mais antigo:");
         alertas.forEach(alerta -> System.out.println("  " + alerta));
+
+        if (confirmar("Exportar os alertas para CSV? (s/n): ")) {
+            Path arquivo = PASTA_EXPORTACAO.resolve("alertas-" + carimbo() + ".csv");
+            try {
+                ExportadorCsv.exportarAlertas(alertas, arquivo);
+                System.out.println("Alertas exportados em: " + arquivo.toAbsolutePath());
+            } catch (IOException e) {
+                System.out.println("[ERRO AO EXPORTAR] Não foi possível gravar " + arquivo + ": " + e.getMessage());
+            }
+        }
     }
 
     // ---------- 4. Gerenciar dados do território ----------
@@ -270,6 +299,15 @@ public class SistemaMonitoramento implements CommandLineRunner {
             throw new DadosInvalidosException("Opção " + escolha + " não existe. Escolha entre 1 e " + opcoes.size() + ".");
         }
         return opcoes.get(escolha - 1);
+    }
+
+    private boolean confirmar(String pergunta) {
+        System.out.print(pergunta);
+        return scanner.nextLine().trim().equalsIgnoreCase("s");
+    }
+
+    private String carimbo() {
+        return LocalDateTime.now().format(CARIMBO);
     }
 
     private int lerInteiro(String rotulo) {
