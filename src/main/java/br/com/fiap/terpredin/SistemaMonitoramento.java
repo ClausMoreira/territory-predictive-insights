@@ -1,11 +1,14 @@
 package br.com.fiap.terpredin;
 
-import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 import java.util.Scanner;
 import java.util.function.Function;
+
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
+
+import br.com.fiap.terpredin.dominio.Alerta;
 import br.com.fiap.terpredin.dominio.DadosTerritorio;
 import br.com.fiap.terpredin.dominio.Medicao;
 import br.com.fiap.terpredin.dominio.NivelAlerta;
@@ -18,23 +21,27 @@ import br.com.fiap.terpredin.dominio.TipoSensor;
 import br.com.fiap.terpredin.excecao.DadosInvalidosException;
 import br.com.fiap.terpredin.excecao.FonteIndisponivelException;
 import br.com.fiap.terpredin.servico.ConfiguracaoSistema;
+import br.com.fiap.terpredin.servico.ServicoMonitoramento;
 
 /**
- * Menu principal de console. Spring Boot executa o método run() quando iniciar.
- * Toda exceção é capturada aqui e vira uma mensagem pro usuário.
+ * Menu principal de console. O Spring Boot executa o método run() ao iniciar.
+ * Toda exceção é capturada aqui e vira uma mensagem clara para o usuário.
  */
 @Component
 public class SistemaMonitoramento implements CommandLineRunner {
 
-    /** Código de acesso para alterar limiares. */
+    /** Código de acesso para alterar limiares (informado no README para a correção). */
     private static final String CODIGO_ACESSO = "gs2026";
 
     private final Scanner scanner = new Scanner(System.in);
     private final ConfiguracaoSistema configuracao = ConfiguracaoSistema.getInstancia();
+    private final ServicoMonitoramento servico;
     private final SubestacaoEnergia subestacao;
     private final DadosTerritorio territorio;
 
-    public SistemaMonitoramento() {
+    /** O Spring entrega o ServicoMonitoramento pronto, já ligado ao banco. */
+    public SistemaMonitoramento(ServicoMonitoramento servico) {
+        this.servico = servico;
         subestacao = new SubestacaoEnergia("SE-LESTE-01", "Subestação Leste", "Zona Leste", 40.0);
         subestacao.adicionarSensor(new SensorTemperaturaAmbiente("TA-LESTE-01"));
         subestacao.adicionarSensor(new SensorCargaRede("CR-LESTE-01"));
@@ -79,7 +86,7 @@ public class SistemaMonitoramento implements CommandLineRunner {
 
     private void exibirMenu() {
         System.out.println();
-        System.out.println("1 - Verificar sensores (nova leitura)");
+        System.out.println("1 - Verificar sensores (novas leituras gravadas no banco)");
         System.out.println("2 - Rodar previsões");
         System.out.println("3 - Ver histórico");
         System.out.println("4 - Gerenciar dados do território");
@@ -88,37 +95,75 @@ public class SistemaMonitoramento implements CommandLineRunner {
         System.out.print("Escolha: ");
     }
 
-    // 1. Verificar sensores
+    // ---------- 1. Verificar sensores ----------
 
     private void verificarSensores() {
         System.out.println("\n--- Autoteste da subestação ---");
         System.out.println("Status: " + subestacao.verificarStatus().getDescricao());
 
-        System.out.println("\n--- Leitura dos sensores ---");
-        for (Sensor sensor : subestacao.getSensores()) {
-            try {
-                double valor = sensor.lerValor();
-                Medicao medicao = new Medicao(sensor.getId(), sensor.getTipo(), valor, LocalDateTime.now());
-                System.out.println(medicao);
-            } catch (FonteIndisponivelException e) {
-                System.out.println("[SENSOR INDISPONÍVEL] " + e.getMessage());
+        int rodadas = lerInteiro("Quantas rodadas de leitura? (1 a 20): ");
+        if (rodadas < 1 || rodadas > 20) {
+            throw new DadosInvalidosException("O número de rodadas deve ficar entre 1 e 20 (informado: " + rodadas + ").");
+        }
+
+        int gravadas = 0;
+        for (int rodada = 1; rodada <= rodadas; rodada++) {
+            System.out.println("\n--- Rodada " + rodada + " de " + rodadas + " ---");
+            for (Sensor sensor : subestacao.getSensores()) {
+                try {
+                    Medicao medicao = servico.registrarLeitura(sensor);
+                    System.out.println(medicao);
+                    gravadas++;
+                } catch (FonteIndisponivelException e) {
+                    System.out.println("[SENSOR INDISPONÍVEL] " + e.getMessage());
+                }
             }
         }
+        System.out.println("\n" + gravadas + " medição(ões) gravada(s) no banco.");
     }
 
-    // 2. Rodar previsões 
+    // ---------- 2. Rodar previsões ----------
 
     private void rodarPrevisoes() {
         System.out.println("Em construção: as previsões entram na Fase 4.");
     }
 
-    // 3. Ver histórico 
+    // ---------- 3. Ver histórico ----------
 
     private void verHistorico() {
-        System.out.println("Em construção: o histórico entra na Fase 3, junto com o banco de dados.");
+        System.out.println("\n--- Histórico ---");
+        System.out.println("1 - Medições por sensor");
+        System.out.println("2 - Alertas já emitidos");
+        System.out.print("Escolha: ");
+        switch (scanner.nextLine().trim()) {
+            case "1" -> listarMedicoesPorSensor();
+            case "2" -> listarAlertas();
+            default -> System.out.println("Opção inválida.");
+        }
     }
 
-    // 4. Gerenciar dados do território
+    private void listarMedicoesPorSensor() {
+        Sensor sensor = escolher("Sensor", subestacao.getSensores(), Sensor::toString);
+        List<Medicao> historico = servico.buscarHistoricoPorSensor(sensor.getId());
+        if (historico.isEmpty()) {
+            System.out.println("Nenhuma medição gravada para " + sensor + ". Use a opção 1 para fazer leituras.");
+            return;
+        }
+        System.out.println(historico.size() + " medição(ões) de " + sensor + ":");
+        historico.forEach(medicao -> System.out.println("  " + medicao));
+    }
+
+    private void listarAlertas() {
+        List<Alerta> alertas = servico.listarAlertas();
+        if (alertas.isEmpty()) {
+            System.out.println("Nenhum alerta emitido até agora.");
+            return;
+        }
+        System.out.println(alertas.size() + " alerta(s) emitido(s), do mais recente para o mais antigo:");
+        alertas.forEach(alerta -> System.out.println("  " + alerta));
+    }
+
+    // ---------- 4. Gerenciar dados do território ----------
 
     private void gerenciarDadosTerritorio() {
         System.out.println("\n--- Dados do território ---");
@@ -156,8 +201,8 @@ public class SistemaMonitoramento implements CommandLineRunner {
     }
 
     private void alterarLimiar() {
-        TipoSensor tipo = escolher("Tipo de sensor", TipoSensor.values(), TipoSensor::getDescricao);
-        NivelAlerta nivel = escolher("Nível", NivelAlerta.values(), NivelAlerta::getRotulo);
+        TipoSensor tipo = escolher("Tipo de sensor", List.of(TipoSensor.values()), TipoSensor::getDescricao);
+        NivelAlerta nivel = escolher("Nível", List.of(NivelAlerta.values()), NivelAlerta::getRotulo);
         System.out.println("Limiar atual: " + tipo.formatar(configuracao.getLimiar(tipo, nivel)));
         double novoValor = lerDecimal("Novo limiar (" + tipo.getUnidade() + "): ");
         System.out.print("Código de acesso: ");
@@ -167,7 +212,7 @@ public class SistemaMonitoramento implements CommandLineRunner {
                 + " atualizado para " + tipo.formatar(novoValor) + ".");
     }
 
-    // 5. Status completo
+    // ---------- 5. Status completo ----------
 
     private void exibirStatusCompleto() {
         System.out.println("\n--- Status completo ---");
@@ -179,20 +224,22 @@ public class SistemaMonitoramento implements CommandLineRunner {
             System.out.println("  " + sensor);
         }
         exibirDadosELimiares();
+        System.out.println("Banco de dados: " + servico.contarMedicoes() + " medição(ões) e "
+                + servico.contarAlertas() + " alerta(s) gravados");
     }
 
-    // Leitura de entradas
+    // ---------- Leitura de entradas ----------
 
-    private <E extends Enum<E>> E escolher(String titulo, E[] opcoes, Function<E, String> rotulo) {
+    private <T> T escolher(String titulo, List<T> opcoes, Function<T, String> rotulo) {
         System.out.println(titulo + ":");
-        for (int i = 0; i < opcoes.length; i++) {
-            System.out.println("  " + (i + 1) + " - " + rotulo.apply(opcoes[i]));
+        for (int i = 0; i < opcoes.size(); i++) {
+            System.out.println("  " + (i + 1) + " - " + rotulo.apply(opcoes.get(i)));
         }
         int escolha = lerInteiro("Escolha: ");
-        if (escolha < 1 || escolha > opcoes.length) {
-            throw new DadosInvalidosException("Opção " + escolha + " não existe. Escolha entre 1 e " + opcoes.length + ".");
+        if (escolha < 1 || escolha > opcoes.size()) {
+            throw new DadosInvalidosException("Opção " + escolha + " não existe. Escolha entre 1 e " + opcoes.size() + ".");
         }
-        return opcoes[escolha - 1];
+        return opcoes.get(escolha - 1);
     }
 
     private int lerInteiro(String rotulo) {
