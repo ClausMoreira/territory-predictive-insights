@@ -3,8 +3,8 @@ package br.com.fiap.terpredin.excecao;
 /**
  * Lançada quando uma fonte de dados (sensor ou gerador de leituras) falha.
  *
- * É checked (Exception) porque falha de equipamento é algo esperado no
- * mundo real: o compilador obriga quem lê um sensor a tratar essa situação.
+ * Exception porque falha de equipamento é algo esperado:
+ * o compilador obriga quem lê um sensor a tratar a situação.
  */
 public class FonteIndisponivelException extends Exception {
 
