@@ -1,14 +1,18 @@
 package br.com.fiap.terpredin.servico;
+
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.Map;
 import java.util.Optional;
+
 import br.com.fiap.terpredin.dominio.NivelAlerta;
 import br.com.fiap.terpredin.dominio.TipoSensor;
 import br.com.fiap.terpredin.excecao.DadosInvalidosException;
 
 /**
- * Singleton: única instância que guarda os limiares de alerta e a janela de previsão.
+ * Singleton: única instância que guarda os limiares de alerta, a janela de previsão
+ * e a estratégia de previsão padrão.
+ * Todo o sistema consulta os limiares aqui, então uma alteração vale para todos.
  */
 public final class ConfiguracaoSistema {
 
@@ -16,6 +20,7 @@ public final class ConfiguracaoSistema {
 
     private final Map<TipoSensor, EnumMap<NivelAlerta, Double>> limiares = new EnumMap<>(TipoSensor.class);
     private int janelaPrevisao;
+    private TipoPrevisao estrategiaPadrao;
 
     private ConfiguracaoSistema() {
         restaurarPadroes();
@@ -34,6 +39,7 @@ public final class ConfiguracaoSistema {
         registrar(TipoSensor.CARGA_REDE, 80.0, 90.0, 100.0);
         registrar(TipoSensor.TEMPERATURA_TRANSFORMADOR, 75.0, 85.0, 95.0);
         janelaPrevisao = 5;
+        estrategiaPadrao = TipoPrevisao.MEDIA_MOVEL;
     }
 
     private void registrar(TipoSensor tipo, double atencao, double alerta, double critico) {
@@ -54,7 +60,7 @@ public final class ConfiguracaoSistema {
 
     /**
      * Altera um limiar, garantindo que ele esteja na faixa do sensor
-     * e que a ordem ATENÇÃO < ALERTA < CRÍTICO continue valida.
+     * e que a ordem ATENÇÃO < ALERTA < CRÍTICO continue valendo.
      */
     public void definirLimiar(TipoSensor tipo, NivelAlerta nivel, double valor) {
         if (tipo == null || nivel == null) {
@@ -79,7 +85,7 @@ public final class ConfiguracaoSistema {
 
     /**
      * Compara um valor previsto com os limiares e devolve o nível mais grave atingido,
-     * ou vazio se o valor estiver abaixo de todos.
+     * ou vazio se o valor está abaixo de todos.
      */
     public Optional<NivelAlerta> classificar(TipoSensor tipo, double valorPrevisto) {
         NivelAlerta atingido = null;
@@ -101,5 +107,16 @@ public final class ConfiguracaoSistema {
                     + janelaPrevisao + ").");
         }
         this.janelaPrevisao = janelaPrevisao;
+    }
+
+    public TipoPrevisao getEstrategiaPadrao() {
+        return estrategiaPadrao;
+    }
+
+    public void setEstrategiaPadrao(TipoPrevisao estrategiaPadrao) {
+        if (estrategiaPadrao == null) {
+            throw new DadosInvalidosException("Informe a estratégia de previsão padrão.");
+        }
+        this.estrategiaPadrao = estrategiaPadrao;
     }
 }
