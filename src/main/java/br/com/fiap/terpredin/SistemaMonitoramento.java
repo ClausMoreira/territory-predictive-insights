@@ -13,7 +13,6 @@ import br.com.fiap.terpredin.dominio.DadosTerritorio;
 import br.com.fiap.terpredin.dominio.EstrategiaPrevisao;
 import br.com.fiap.terpredin.dominio.Medicao;
 import br.com.fiap.terpredin.dominio.NivelAlerta;
-import br.com.fiap.terpredin.dominio.PrevisaoMediaMovel;
 import br.com.fiap.terpredin.dominio.Sensor;
 import br.com.fiap.terpredin.dominio.SensorCargaRede;
 import br.com.fiap.terpredin.dominio.SensorTemperaturaAmbiente;
@@ -23,8 +22,10 @@ import br.com.fiap.terpredin.dominio.TipoSensor;
 import br.com.fiap.terpredin.excecao.DadosInvalidosException;
 import br.com.fiap.terpredin.excecao.FonteIndisponivelException;
 import br.com.fiap.terpredin.servico.ConfiguracaoSistema;
+import br.com.fiap.terpredin.servico.FabricaPrevisao;
 import br.com.fiap.terpredin.servico.ResultadoPrevisao;
 import br.com.fiap.terpredin.servico.ServicoMonitoramento;
+import br.com.fiap.terpredin.servico.TipoPrevisao;
 
 /**
  * Menu principal de console. O Spring Boot executa o método run() ao iniciar.
@@ -33,9 +34,7 @@ import br.com.fiap.terpredin.servico.ServicoMonitoramento;
 @Component
 public class SistemaMonitoramento implements CommandLineRunner {
 
-    /**
-     * Código de acesso para alterar limiares (informado no README para a correção).
-     */
+    /** Código de acesso para alterar limiares (informado no README para a correção). */
     private static final String CODIGO_ACESSO = "gs2026";
 
     private final Scanner scanner = new Scanner(System.in);
@@ -108,8 +107,7 @@ public class SistemaMonitoramento implements CommandLineRunner {
 
         int rodadas = lerInteiro("Quantas rodadas de leitura? (1 a 20): ");
         if (rodadas < 1 || rodadas > 20) {
-            throw new DadosInvalidosException(
-                    "O número de rodadas deve ficar entre 1 e 20 (informado: " + rodadas + ").");
+            throw new DadosInvalidosException("O número de rodadas deve ficar entre 1 e 20 (informado: " + rodadas + ").");
         }
 
         int gravadas = 0;
@@ -131,7 +129,7 @@ public class SistemaMonitoramento implements CommandLineRunner {
     // ---------- 2. Rodar previsões ----------
 
     private void rodarPrevisoes() {
-        EstrategiaPrevisao estrategia = new PrevisaoMediaMovel(configuracao.getJanelaPrevisao());
+        EstrategiaPrevisao estrategia = FabricaPrevisao.criarPadrao();
         System.out.println("\n--- Previsões: " + estrategia.getNome() + " ---");
 
         int alertasEmitidos = 0;
@@ -190,6 +188,8 @@ public class SistemaMonitoramento implements CommandLineRunner {
         System.out.println("2 - Alterar limiar de alerta (exige código de acesso)");
         System.out.println("3 - Alterar população atendida");
         System.out.println("4 - Alterar quantidade de equipamentos críticos");
+        System.out.println("5 - Trocar a estratégia de previsão");
+        System.out.println("6 - Alterar a janela de previsão");
         System.out.print("Escolha: ");
         switch (scanner.nextLine().trim()) {
             case "1" -> exibirDadosELimiares();
@@ -201,6 +201,16 @@ public class SistemaMonitoramento implements CommandLineRunner {
             case "4" -> {
                 territorio.setEquipamentosCriticos(lerInteiro("Nova quantidade de equipamentos críticos: "));
                 System.out.println("Quantidade de equipamentos críticos atualizada.");
+            }
+            case "5" -> {
+                TipoPrevisao tipo = escolher("Estratégia de previsão", List.of(TipoPrevisao.values()),
+                        TipoPrevisao::getDescricao);
+                configuracao.setEstrategiaPadrao(tipo);
+                System.out.println("As próximas previsões vão usar: " + tipo.getDescricao() + ".");
+            }
+            case "6" -> {
+                configuracao.setJanelaPrevisao(lerInteiro("Nova janela (quantidade de leituras, 2 a 50): "));
+                System.out.println("Janela de previsão atualizada para " + configuracao.getJanelaPrevisao() + " leituras.");
             }
             default -> System.out.println("Opção inválida.");
         }
@@ -216,7 +226,8 @@ public class SistemaMonitoramento implements CommandLineRunner {
                     + tipo.formatar(limiares.get(NivelAlerta.ALERTA)) + " / "
                     + tipo.formatar(limiares.get(NivelAlerta.CRITICO)));
         }
-        System.out.println("Janela de previsão: últimas " + configuracao.getJanelaPrevisao() + " leituras");
+        System.out.println("Estratégia de previsão: " + configuracao.getEstrategiaPadrao().getDescricao()
+                + " | janela: últimas " + configuracao.getJanelaPrevisao() + " leituras");
     }
 
     private void alterarLimiar() {
@@ -256,8 +267,7 @@ public class SistemaMonitoramento implements CommandLineRunner {
         }
         int escolha = lerInteiro("Escolha: ");
         if (escolha < 1 || escolha > opcoes.size()) {
-            throw new DadosInvalidosException(
-                    "Opção " + escolha + " não existe. Escolha entre 1 e " + opcoes.size() + ".");
+            throw new DadosInvalidosException("Opção " + escolha + " não existe. Escolha entre 1 e " + opcoes.size() + ".");
         }
         return opcoes.get(escolha - 1);
     }
